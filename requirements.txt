@@ -1,0 +1,24 @@
+# Core RAG Framework
+qdrant-client==1.7.0
+tiktoken==0.5.2
+spacy==3.7.2
+
+# Embeddings & LLM
+openai==1.10.0
+
+# Evaluation (optional but recommended)
+ragas==0.1.4
+datasets==2.16.1
+
+# UI
+streamlit==1.30.0
+
+# Utilities
+python-dotenv==1.0.0
+pydantic==2.5.0
+pyyaml==6.0.1
+numpy==1.24.3
+
+# Testing (optional)
+pytest==7.4.0
+pytest-asyncio==0.21.0

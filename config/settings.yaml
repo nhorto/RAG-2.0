@@ -1,0 +1,115 @@
+# RAG System Configuration
+# Tekla PowerFab Consulting RAG System v2.0
+
+# Embedding Configuration
+embeddings:
+  provider: "openai"  # Using OpenAI instead of Voyage-3/Cohere
+  model: "text-embedding-3-large"  # or "text-embedding-3-small" for lower cost
+  dimensions: 3072  # text-embedding-3-large default (can be reduced to 1536, 768, 256)
+  batch_size: 100  # Embeddings per API call
+
+# Qdrant Configuration
+qdrant:
+  host: "localhost"
+  port: 6333
+  collection_name: "consulting_transcripts"
+  vector_config:
+    size: 3072  # Match embedding dimensions
+    distance: "Cosine"
+  hnsw_config:
+    m: 16  # Connections per layer
+    ef_construct: 100  # Construction accuracy
+  enable_sparse_vectors: true  # For BM25 hybrid search
+
+# Chunking Configuration
+chunking:
+  transcript:
+    strategy: "fixed_size"
+    chunk_size: 512  # tokens
+    overlap: 50  # tokens (10%)
+    respect_sentence_boundaries: true
+    prefer_speaker_boundaries: true
+  summary:
+    strategy: "paragraph"
+    min_size: 100  # tokens
+    max_size: 800  # tokens
+    split_on: "\n\n"  # Paragraph breaks
+  generic:
+    strategy: "sentence"
+    chunk_size: 512
+    overlap: 50
+
+# Retrieval Configuration
+retrieval:
+  dense_search:
+    top_k: 20  # Candidates from dense vector search
+
+  sparse_search:
+    top_k: 20  # Candidates from BM25 search
+    bm25_k1: 1.2  # Term frequency saturation
+    bm25_b: 0.75  # Document length normalization
+
+  fusion:
+    method: "rrf"  # "rrf" or "weighted_sum"
+    rrf_k: 60  # RRF constant
+    dense_weight: 0.7  # For weighted_sum
+    sparse_weight: 0.3  # For weighted_sum
+
+  final_top_k: 10  # Results after fusion
+
+  reranking:
+    enabled: false  # Set to true to use Cohere Rerank
+    model: "rerank-english-v3.0"
+    top_k: 5  # Final results after reranking
+
+# Query Processing Configuration
+query_processing:
+  enable_expansion: true  # Expand abbreviations
+  enable_rewriting: true  # Multi-query generation
+  num_rewrites: 2  # Alternative phrasings
+  enable_decomposition: true  # Split compound queries
+  enable_metadata_extraction: true  # Extract dates, clients, etc.
+
+# LLM Configuration (for generation and evaluation)
+llm:
+  provider: "openai"  # or "anthropic"
+  model: "gpt-4"
+  temperature: 0.0  # Deterministic for evaluation
+  max_tokens: 1000
+
+# Evaluation Configuration
+evaluation:
+  llm_model: "gpt-4"
+  embedding_model: "text-embedding-3-large"
+  metrics:
+    retrieval:
+      - "precision@5"
+      - "precision@10"
+      - "recall@10"
+      - "mrr"
+    generation:
+      - "faithfulness"
+      - "answer_relevancy"
+      - "answer_completeness"
+
+# Document Processing
+processing:
+  supported_formats:
+    - ".txt"
+    - ".srt"
+  encoding: "utf-8"
+  normalize_whitespace: true
+  remove_timestamps: true  # For .srt files
+
+# Metadata Extraction
+metadata:
+  enable_ner: true  # Named entity recognition
+  spacy_model: "en_core_web_sm"
+  enable_keyword_matching: true
+  domain_vocabulary_path: "config/domain_vocabulary.json"
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/rag_system.log"

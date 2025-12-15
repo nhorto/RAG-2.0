@@ -1,0 +1,43 @@
+{
+  "modules": [
+    "Estimating",
+    "Purchasing",
+    "Production Control",
+    "Fabrication",
+    "Shipping",
+    "Accounting",
+    "Management"
+  ],
+  "features": [
+    "BOMs",
+    "Bill of Materials",
+    "Work Orders",
+    "Shipping Documents",
+    "Reports",
+    "Integration",
+    "Customization",
+    "Purchase Orders",
+    "Inventory",
+    "Job Costing",
+    "Project Management"
+  ],
+  "topics": [
+    "Training",
+    "Implementation",
+    "Troubleshooting",
+    "Best Practices",
+    "Feature Request",
+    "Bug Report",
+    "Workflow Optimization",
+    "Data Migration",
+    "User Management"
+  ],
+  "abbreviations": {
+    "BOM": "Bill of Materials",
+    "WO": "Work Order",
+    "PO": "Purchase Order",
+    "PC": "Production Control",
+    "ERP": "Enterprise Resource Planning",
+    "CAD": "Computer-Aided Design"
+  }
+}
