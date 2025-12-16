@@ -50,8 +50,8 @@ retrieval:
     bm25_b: 0.75  # Document length normalization
 
   fusion:
-    method: "rrf"  # "rrf" or "weighted_sum"
-    rrf_k: 60  # RRF constant
+    method: "prefetch"  # "prefetch" (Qdrant native), "rrf" (manual), or "weighted_sum"
+    rrf_k: 60  # RRF constant (fallback for manual RRF)
     dense_weight: 0.7  # For weighted_sum
     sparse_weight: 0.3  # For weighted_sum
 
@@ -59,7 +59,8 @@ retrieval:
 
   reranking:
     enabled: false  # Set to true to use Cohere Rerank
-    model: "rerank-english-v3.0"
+    provider: "cohere"  # "cohere" or "local"
+    model: "rerank-english-v3.0"  # For Cohere
     top_k: 5  # Final results after reranking
 
 # Query Processing Configuration
@@ -67,8 +68,54 @@ query_processing:
   enable_expansion: true  # Expand abbreviations
   enable_rewriting: true  # Multi-query generation
   num_rewrites: 2  # Alternative phrasings
-  enable_decomposition: true  # Split compound queries
+  enable_decomposition: true  # Split compound queries (legacy flag, see advanced_processing)
   enable_metadata_extraction: true  # Extract dates, clients, etc.
+
+  # Advanced Query Processing (NEW)
+  advanced_processing:
+    # Master enable/disable for all advanced features
+    enabled: true
+
+    # Feature flags for specific capabilities
+    enable_decomposition: true   # Break multi-part queries into sub-queries
+    enable_augmentation: true    # Add domain context to vague queries
+
+    # Analysis thresholds (confidence scores 0.0-1.0)
+    analysis:
+      min_decompose_confidence: 0.6  # Minimum confidence to trigger decomposition
+      min_augment_confidence: 0.5    # Minimum confidence to trigger augmentation
+
+    # Query decomposition settings
+    decomposition:
+      llm_model: "gpt-4"           # Use GPT-4 for complex reasoning
+      temperature: 0.3             # Low temperature for consistency
+      max_tokens: 500              # Maximum tokens to generate
+      max_sub_queries: 5           # Limit to prevent explosion
+      enable_caching: true         # Cache decomposition results (future)
+      cache_ttl_seconds: 3600      # 1 hour cache TTL (future)
+
+    # Query augmentation settings
+    augmentation:
+      llm_model: "gpt-3.5-turbo"   # Cheaper model for augmentation
+      temperature: 0.5             # Moderate temp for variety
+      max_tokens: 300              # Maximum tokens to generate
+      max_variants: 5              # Limit variants to prevent explosion
+      enable_fallback: true        # Use rule-based fallback on LLM failure
+      enable_caching: true         # Cache augmentation results (future)
+      cache_ttl_seconds: 3600      # 1 hour cache TTL (future)
+
+    # Orchestration settings
+    orchestration:
+      parallel_workers: 5           # ThreadPoolExecutor max workers
+      top_k_per_subquery: 10        # Results per sub-query
+      top_k_per_variant: 5          # Results per augmented variant
+      enable_deduplication: true    # Remove duplicate chunks
+
+    # Performance tuning
+    performance:
+      enable_parallel_processing: true  # Run decompose + augment in parallel (future)
+      timeout_seconds: 10               # Max time for any LLM call
+      retry_attempts: 2                 # Number of retries on failure
 
 # LLM Configuration (for generation and evaluation)
 llm:
@@ -107,6 +154,21 @@ metadata:
   spacy_model: "en_core_web_sm"
   enable_keyword_matching: true
   domain_vocabulary_path: "config/domain_vocabulary.json"
+
+  # NER Processing Strategy
+  ner_strategy: "batch"  # "full", "batch", or "sample"
+  max_ner_chars: null  # null = process all, or set limit (e.g., 50000)
+  ner_batch_size: 10000  # Characters per batch (for batch strategy)
+
+  # Sampling configuration (for sample strategy)
+  sample_size: 5000  # Characters per sample section
+
+  # Limits
+  max_action_items: 10
+  max_decisions: 10
+
+  # Constants
+  words_per_minute: 150  # Average speaking rate for duration estimation
 
 # Logging
 logging:

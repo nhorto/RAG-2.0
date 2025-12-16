@@ -10,6 +10,12 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
+try:
+    from fastembed import SparseTextEmbedding
+    FASTEMBED_AVAILABLE = True
+except ImportError:
+    FASTEMBED_AVAILABLE = False
+
 from ..utils.config_loader import get_config
 
 
@@ -320,6 +326,91 @@ class CachedEmbeddingGenerator:
                     pass  # Cache save failed, continue
 
         return embeddings
+
+
+class HybridEmbeddingGenerator:
+    """Generate both dense (OpenAI) and sparse (BM25) embeddings."""
+
+    def __init__(
+        self,
+        dense_generator: EmbeddingGenerator = None,
+        sparse_model: str = "Qdrant/bm25",
+    ):
+        """Initialize hybrid embedding generator.
+
+        Args:
+            dense_generator: EmbeddingGenerator instance (OpenAI)
+            sparse_model: FastEmbed sparse model name
+        """
+        if not FASTEMBED_AVAILABLE:
+            raise ImportError(
+                "FastEmbed library not installed. Run: pip install fastembed"
+            )
+
+        # Dense embeddings (OpenAI)
+        self.dense_generator = dense_generator or EmbeddingGenerator()
+
+        # Sparse embeddings (BM25)
+        self.sparse_model = SparseTextEmbedding(model_name=sparse_model)
+
+    def generate_embeddings(
+        self,
+        texts: List[str],
+        show_progress: bool = True
+    ) -> List[Dict[str, any]]:
+        """Generate both dense and sparse embeddings.
+
+        Args:
+            texts: List of input texts
+            show_progress: Whether to show progress
+
+        Returns:
+            List of dicts with 'dense' and 'sparse' keys
+        """
+        if show_progress:
+            print(f"Generating dense embeddings for {len(texts)} texts...")
+
+        # Generate dense embeddings (OpenAI API)
+        dense_embeddings = self.dense_generator.generate_embeddings(
+            texts, show_progress=show_progress
+        )
+
+        if show_progress:
+            print(f"Generating sparse embeddings for {len(texts)} texts...")
+
+        # Generate sparse embeddings (local BM25)
+        # FastEmbed returns generator, convert to list
+        sparse_embeddings = list(self.sparse_model.embed(texts))
+
+        # Combine into hybrid format
+        hybrid_embeddings = []
+        for dense, sparse in zip(dense_embeddings, sparse_embeddings):
+            hybrid_embeddings.append({
+                "dense": dense,
+                "sparse": sparse  # This is already in Qdrant sparse format
+            })
+
+        return hybrid_embeddings
+
+    def generate_query_embeddings(self, query: str) -> Dict[str, any]:
+        """Generate embeddings for a single query.
+
+        Args:
+            query: Query text
+
+        Returns:
+            Dict with 'dense' and 'sparse' embeddings
+        """
+        # Dense embedding
+        dense = self.dense_generator.generate_embedding(query)
+
+        # Sparse embedding
+        sparse = list(self.sparse_model.embed([query]))[0]
+
+        return {
+            "dense": dense,
+            "sparse": sparse
+        }
 
 
 # For testing

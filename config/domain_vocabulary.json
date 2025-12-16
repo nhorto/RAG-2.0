@@ -39,5 +39,19 @@
     "PC": "Production Control",
     "ERP": "Enterprise Resource Planning",
     "CAD": "Computer-Aided Design"
-  }
+  },
+  "action_verbs": [
+    "Send",
+    "Schedule",
+    "Create",
+    "Update",
+    "Review",
+    "Complete",
+    "Follow up",
+    "Implement",
+    "Test",
+    "Deploy",
+    "Configure",
+    "Document"
+  ]
 }

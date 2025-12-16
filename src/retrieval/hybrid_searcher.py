@@ -1,11 +1,20 @@
 """Hybrid search combining dense vector search with sparse BM25."""
 
+import logging
 from typing import List, Dict, Optional, Literal
 from collections import defaultdict
 
 from ..database.qdrant_client import QdrantManager, SearchResult, get_qdrant_manager
-from ..ingestion.embedding_generator import EmbeddingGenerator
+from ..ingestion.embedding_generator import EmbeddingGenerator, HybridEmbeddingGenerator
 from ..utils.config_loader import get_config
+
+try:
+    from .reranker import get_reranker
+    RERANKER_AVAILABLE = True
+except ImportError:
+    RERANKER_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 
 class HybridSearcher:
@@ -52,10 +61,26 @@ class HybridSearcher:
         self.sparse_top_k = sparse_config.get("top_k", 20)
         self.final_top_k = retrieval_config.get("final_top_k", 10)
 
+        # Reranking configuration
+        rerank_config = retrieval_config.get("reranking", {})
+        self.rerank_enabled = rerank_config.get("enabled", False)
+
+        if self.rerank_enabled and RERANKER_AVAILABLE:
+            rerank_provider = rerank_config.get("provider", "cohere")
+            try:
+                self.reranker = get_reranker(provider=rerank_provider)
+                logger.info(f"Reranking enabled with {rerank_provider}")
+            except Exception as e:
+                logger.warning(f"Could not initialize reranker: {e}")
+                self.rerank_enabled = False
+                self.reranker = None
+        else:
+            self.reranker = None
+
     def search(
         self,
         query: str,
-        filters: Optional[any] = None,
+        filters: Optional[Dict] = None,
         top_k: int = None,
         dense_only: bool = False,
         sparse_only: bool = False,
@@ -74,40 +99,67 @@ class HybridSearcher:
         """
         top_k = top_k or self.final_top_k
 
-        # Generate query embedding
-        query_embedding = self.embedder.generate_embedding(query)
+        # If using prefetch method and hybrid mode, delegate to optimized version
+        if self.fusion_method == "prefetch" and not dense_only and not sparse_only:
+            results = self.search_with_prefetch(query, filters, top_k=20 if self.rerank_enabled else top_k)
+        else:
 
-        # Dense vector search
-        if not sparse_only:
-            dense_results = self._dense_search(
-                query_embedding, filters, self.dense_top_k
+            # Otherwise, use manual fusion (existing code)
+            # Generate hybrid query embeddings (dense + sparse)
+            # Check if embedder is HybridEmbeddingGenerator
+            if isinstance(self.embedder, HybridEmbeddingGenerator):
+                query_embeddings = self.embedder.generate_query_embeddings(query)
+                query_dense = query_embeddings["dense"]
+                query_sparse = query_embeddings["sparse"]
+            else:
+                # Fall back to dense-only if using old EmbeddingGenerator
+                query_dense = self.embedder.generate_embedding(query)
+                query_sparse = None
+
+            # Dense vector search
+            if not sparse_only:
+                dense_results = self._dense_search(
+                    query_dense, filters, self.dense_top_k
+                )
+            else:
+                dense_results = []
+
+            # Sparse BM25 search (using real indexed sparse vectors)
+            if not dense_only and query_sparse is not None:
+                sparse_results = self._sparse_search(
+                    query_sparse, filters, self.sparse_top_k
+                )
+            else:
+                sparse_results = []
+
+            # If only one type of search, return directly (with reranking if enabled)
+            if dense_only:
+                results = dense_results[:20 if self.rerank_enabled else top_k]
+            elif sparse_only:
+                results = sparse_results[:20 if self.rerank_enabled else top_k]
+            else:
+                # Hybrid fusion
+                if self.fusion_method == "rrf":
+                    fused_results = self._reciprocal_rank_fusion(
+                        dense_results, sparse_results, self.rrf_k
+                    )
+                else:
+                    fused_results = self._weighted_fusion(
+                        dense_results, sparse_results
+                    )
+                results = fused_results[:20 if self.rerank_enabled else top_k]
+
+        # Apply reranking if enabled
+        if self.rerank_enabled and self.reranker:
+            results = self.reranker.rerank(
+                query=query,
+                results=results,
+                top_n=top_k
             )
         else:
-            dense_results = []
+            results = results[:top_k]
 
-        # Sparse BM25 search (simulated - Qdrant native sparse vectors require v1.7+)
-        if not dense_only:
-            sparse_results = self._sparse_search(query, filters, self.sparse_top_k)
-        else:
-            sparse_results = []
-
-        # If only one type of search, return directly
-        if dense_only:
-            return dense_results[:top_k]
-        if sparse_only:
-            return sparse_results[:top_k]
-
-        # Hybrid fusion
-        if self.fusion_method == "rrf":
-            fused_results = self._reciprocal_rank_fusion(
-                dense_results, sparse_results, self.rrf_k
-            )
-        else:
-            fused_results = self._weighted_fusion(
-                dense_results, sparse_results
-            )
-
-        return fused_results[:top_k]
+        return results
 
     def _dense_search(
         self,
@@ -133,79 +185,46 @@ class HybridSearcher:
 
     def _sparse_search(
         self,
-        query: str,
-        filters: Optional[any],
+        query_sparse: Dict,  # Sparse embedding from FastEmbed
+        filters: Optional[Dict],
         top_k: int,
     ) -> List[SearchResult]:
-        """Perform sparse BM25 search.
-
-        Note: This is a simplified implementation using keyword matching.
-        For true BM25, Qdrant v1.7+ with sparse vectors is recommended.
+        """Perform sparse BM25 search using native Qdrant sparse vectors.
 
         Args:
-            query: Query text
+            query_sparse: Sparse query embedding (from FastEmbed)
             filters: Metadata filters
             top_k: Number of results
 
         Returns:
-            List of SearchResult objects (scored by keyword overlap)
+            List of SearchResult objects
         """
-        # Tokenize query
-        query_tokens = set(query.lower().split())
-
-        # For now, do a broad search and score by keyword overlap
-        # In production with Qdrant v1.7+, use native sparse vectors
-
-        # Get candidate chunks (this is a simplified approach)
-        # In real implementation, Qdrant would handle BM25 scoring natively
         try:
-            # Scroll through collection to score by keywords
-            # This is inefficient and just for demonstration
-            # Real implementation would use Qdrant's sparse vector support
+            # Use Qdrant's native sparse vector search
+            search_results = self.qdrant.client.search(
+                collection_name=self.qdrant.collection_name,
+                query_vector=("sparse", query_sparse),  # Use named sparse vector
+                query_filter=filters,
+                limit=top_k,
+                with_payload=True,
+            )
 
-            candidates = []
-            offset = None
-            max_candidates = 1000  # Limit for performance
-
-            while len(candidates) < max_candidates:
-                points, offset = self.qdrant.scroll_points(
-                    limit=100, offset=offset, with_vectors=False
-                )
-
-                if not points:
-                    break
-
-                for point in points:
-                    text = point["payload"].get("text", "").lower()
-                    text_tokens = set(text.split())
-
-                    # Calculate simple overlap score
-                    overlap = len(query_tokens & text_tokens)
-
-                    if overlap > 0:
-                        candidates.append((overlap, point))
-
-                if offset is None:
-                    break
-
-            # Sort by overlap score and convert to SearchResult
-            candidates.sort(key=lambda x: x[0], reverse=True)
-
+            # Convert to SearchResult objects
             results = []
-            for score, point in candidates[:top_k]:
+            for hit in search_results:
                 results.append(
                     SearchResult(
-                        chunk_id=str(point["id"]),
-                        text=point["payload"].get("text", ""),
-                        score=float(score) / len(query_tokens),  # Normalize
-                        metadata=point["payload"],
+                        chunk_id=str(hit.id),
+                        text=hit.payload.get("text", ""),
+                        score=hit.score,
+                        metadata=hit.payload,
                     )
                 )
 
             return results
 
         except Exception as e:
-            print(f"Warning: Sparse search failed: {e}")
+            logger.warning(f"Sparse search failed: {e}")
             return []
 
     def _reciprocal_rank_fusion(
@@ -316,25 +335,77 @@ class HybridSearcher:
 
         return fused_results
 
+    def search_with_prefetch(
+        self,
+        query: str,
+        filters: Optional[any] = None,
+        top_k: int = None,
+    ) -> List[SearchResult]:
+        """Perform hybrid search using Qdrant's native prefetch fusion.
 
-# For testing
-if __name__ == "__main__":
-    # This would require a running Qdrant instance with data
-    # Example usage:
+        This is more efficient than manual RRF as fusion happens server-side.
 
-    searcher = HybridSearcher()
+        Args:
+            query: Search query text
+            filters: Qdrant filter conditions
+            top_k: Number of final results
 
-    query = "How do I create a BOM in Estimating?"
+        Returns:
+            List of SearchResult objects
+        """
+        from qdrant_client.models import Prefetch
 
-    try:
-        results = searcher.search(query, top_k=5)
+        top_k = top_k or self.final_top_k
 
-        print(f"Found {len(results)} results for: {query}\n")
+        # Generate hybrid query embeddings
+        if isinstance(self.embedder, HybridEmbeddingGenerator):
+            query_embeddings = self.embedder.generate_query_embeddings(query)
+        else:
+            # Fallback to dense-only
+            query_dense = self.embedder.generate_embedding(query)
+            return self._dense_search(query_dense, filters, top_k)
 
-        for i, result in enumerate(results, 1):
-            print(f"{i}. Score: {result.score:.4f}")
-            print(f"   Text: {result.text[:100]}...")
-            print()
+        try:
+            # Use Qdrant's prefetch for hybrid search
+            search_results = self.qdrant.client.query_points(
+                collection_name=self.qdrant.collection_name,
+                prefetch=[
+                    # Dense semantic search
+                    Prefetch(
+                        using="dense",
+                        query=query_embeddings["dense"],
+                        limit=self.dense_top_k,
+                        filter=filters,
+                    ),
+                    # Sparse keyword search
+                    Prefetch(
+                        using="sparse",
+                        query=query_embeddings["sparse"],
+                        limit=self.sparse_top_k,
+                        filter=filters,
+                    ),
+                ],
+                query=query_embeddings["dense"],  # Final ranking uses dense
+                using="dense",
+                limit=top_k,
+                with_payload=True,
+            )
 
-    except Exception as e:
-        print(f"Search failed (Qdrant may not be running): {e}")
+            # Convert to SearchResult objects
+            results = []
+            for hit in search_results.points:
+                results.append(
+                    SearchResult(
+                        chunk_id=str(hit.id),
+                        text=hit.payload.get("text", ""),
+                        score=hit.score,
+                        metadata=hit.payload,
+                    )
+                )
+
+            return results
+
+        except Exception as e:
+            logger.warning(f"Prefetch search failed, falling back to manual RRF: {e}")
+            # Fallback to manual RRF if prefetch fails
+            return self.search(query, filters, top_k)

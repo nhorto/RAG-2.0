@@ -15,6 +15,8 @@ try:
         Range,
         SearchRequest,
         ScoredPoint,
+        SparseVectorParams,
+        Prefetch,
     )
     QDRANT_AVAILABLE = True
 except ImportError:
@@ -83,18 +85,26 @@ class QdrantManager:
         self.distance = qdrant_config.get("vector_config", {}).get("distance", "Cosine")
 
     def create_collection(
-        self, vector_size: int = None, distance: str = None, recreate: bool = False
+        self,
+        collection_name: str = None,
+        vector_size: int = None,
+        distance: str = None,
+        enable_sparse: bool = True,
+        recreate: bool = False
     ) -> bool:
-        """Create Qdrant collection.
+        """Create Qdrant collection with multi-vector support.
 
         Args:
-            vector_size: Dimension of vectors (default from config)
-            distance: Distance metric (Cosine, Euclid, Dot)
+            collection_name: Name of collection
+            vector_size: Dense vector size (for OpenAI embeddings)
+            distance: Distance metric for dense vectors
+            enable_sparse: Whether to enable sparse vectors
             recreate: If True, delete existing collection
 
         Returns:
             True if created successfully
         """
+        collection_name = collection_name or self.collection_name
         vector_size = vector_size or self.vector_size
 
         # Map distance string to Distance enum
@@ -107,26 +117,36 @@ class QdrantManager:
 
         # Check if collection exists
         collections = self.client.get_collections().collections
-        collection_exists = any(c.name == self.collection_name for c in collections)
+        collection_exists = any(c.name == collection_name for c in collections)
 
         if collection_exists:
             if recreate:
-                print(f"Deleting existing collection: {self.collection_name}")
-                self.client.delete_collection(self.collection_name)
+                print(f"Deleting existing collection: {collection_name}")
+                self.client.delete_collection(collection_name)
             else:
-                print(f"Collection already exists: {self.collection_name}")
+                print(f"Collection already exists: {collection_name}")
                 return True
 
-        # Create collection
-        print(f"Creating collection: {self.collection_name}")
-        self.client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config=VectorParams(
+        # Create vectors config
+        vectors_config = {
+            "dense": VectorParams(
                 size=vector_size,
                 distance=distance_metric,
-            ),
+            )
+        }
+
+        # Add sparse vectors if enabled
+        if enable_sparse:
+            vectors_config["sparse"] = SparseVectorParams()
+
+        # Create collection with multi-vector support
+        print(f"Creating collection: {collection_name}")
+        self.client.create_collection(
+            collection_name=collection_name,
+            vectors_config=vectors_config,
         )
 
+        print(f"Created collection '{collection_name}' with multi-vector support")
         return True
 
     def collection_exists(self) -> bool:
@@ -355,6 +375,75 @@ class QdrantManager:
         next_offset = result[1]
 
         return points, next_offset
+
+    def upsert_hybrid(
+        self,
+        chunks: List[Dict],
+        hybrid_embeddings: List[Dict[str, any]],
+        batch_size: int = 100,
+    ) -> bool:
+        """Upsert chunks with both dense and sparse embeddings.
+
+        Args:
+            chunks: List of chunk dictionaries with metadata
+            hybrid_embeddings: List of dicts with 'dense' and 'sparse' keys
+            batch_size: Batch size for upserts
+
+        Returns:
+            True if successful
+        """
+        if len(chunks) != len(hybrid_embeddings):
+            raise ValueError("Chunks and embeddings must have same length")
+
+        try:
+            # Process in batches
+            for i in range(0, len(chunks), batch_size):
+                batch_chunks = chunks[i : i + batch_size]
+                batch_embeddings = hybrid_embeddings[i : i + batch_size]
+
+                # Create points with multi-vector format
+                points = []
+                for chunk, embeddings in zip(batch_chunks, batch_embeddings):
+                    point = PointStruct(
+                        id=chunk["chunk_id"] if "chunk_id" in chunk else chunk["id"],
+                        vector={
+                            "dense": embeddings["dense"],
+                            "sparse": embeddings["sparse"],
+                        },
+                        payload=chunk.get("payload", chunk) if "payload" in chunk else chunk,
+                    )
+                    points.append(point)
+
+                # Upsert batch
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=points,
+                )
+
+            print(f"Upserted {len(chunks)} chunks with hybrid embeddings")
+            return True
+
+        except Exception as e:
+            print(f"Error upserting hybrid embeddings: {e}")
+            return False
+
+    def delete_collection(self, collection_name: str = None) -> bool:
+        """Delete a collection.
+
+        Args:
+            collection_name: Name of collection to delete
+
+        Returns:
+            True if successful
+        """
+        collection_name = collection_name or self.collection_name
+        try:
+            self.client.delete_collection(collection_name)
+            print(f"Deleted collection: {collection_name}")
+            return True
+        except Exception as e:
+            print(f"Error deleting collection: {e}")
+            return False
 
 
 def build_metadata_filter(

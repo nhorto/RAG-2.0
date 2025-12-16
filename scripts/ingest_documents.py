@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.ingestion.document_loader import DocumentLoader
 from src.ingestion.chunking_engine import ChunkingEngine
 from src.ingestion.metadata_extractor import MetadataExtractor
-from src.ingestion.embedding_generator import EmbeddingGenerator
+from src.ingestion.embedding_generator import HybridEmbeddingGenerator
 from src.database.qdrant_client import QdrantManager
 from src.utils.config_loader import get_config
 
@@ -61,14 +61,17 @@ def main():
     loader = DocumentLoader()
     chunker = ChunkingEngine()
     metadata_extractor = MetadataExtractor()
-    embedder = EmbeddingGenerator()
+    embedder = HybridEmbeddingGenerator()
     qdrant = QdrantManager(collection_name=args.collection)
 
-    # Create or recreate collection
+    # Create or recreate collection (with sparse vector support)
     print(f"\nCollection: {qdrant.collection_name}")
     if args.recreate_collection or not qdrant.collection_exists():
-        print("Creating Qdrant collection...")
-        qdrant.create_collection(recreate=args.recreate_collection)
+        print("Creating Qdrant collection with hybrid (dense + sparse) vectors...")
+        qdrant.create_collection(
+            enable_sparse=True,
+            recreate=args.recreate_collection
+        )
     else:
         print("Using existing collection")
 
@@ -106,16 +109,16 @@ def main():
         file_metadata["filename"] = doc.filename
         file_metadata["document_type"] = doc_type
 
-        # Generate embeddings and prepare points
-        points = []
-
-        print(f"  Generating embeddings...")
+        # Generate hybrid embeddings (dense + sparse)
+        print(f"  Generating hybrid embeddings...")
         chunk_texts = [chunk.text for chunk in chunks]
-        embeddings = embedder.generate_embeddings(
+        hybrid_embeddings = embedder.generate_embeddings(
             chunk_texts, show_progress=False
         )
 
-        for chunk, embedding in zip(chunks, embeddings):
+        # Prepare chunks with metadata
+        chunks_with_metadata = []
+        for chunk, embedding in zip(chunks, hybrid_embeddings):
             # Create payload
             payload = metadata_extractor.create_chunk_payload(
                 chunk_text=chunk.text,
@@ -129,15 +132,18 @@ def main():
                 },
             )
 
-            points.append({
-                "id": chunk.chunk_id,
-                "vector": embedding,
-                "payload": payload,
+            chunks_with_metadata.append({
+                "chunk_id": chunk.chunk_id,
+                **payload,
             })
 
-        # Upsert to Qdrant
-        print(f"  Upserting to Qdrant...")
-        qdrant.upsert_points(points, show_progress=False)
+        # Upsert to Qdrant with hybrid embeddings
+        print(f"  Upserting to Qdrant with hybrid vectors...")
+        qdrant.upsert_hybrid(
+            chunks=chunks_with_metadata,
+            hybrid_embeddings=hybrid_embeddings,
+            batch_size=100
+        )
 
         total_chunks += len(chunks)
 

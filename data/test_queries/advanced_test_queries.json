@@ -1,0 +1,279 @@
+{
+  "description": "Test queries for advanced query processing capabilities",
+  "created": "2025-12-15",
+  "version": "1.0",
+  "test_queries": [
+    {
+      "query_id": "decomp-1",
+      "query_text": "How do I create a BOM, assign it to a WO, and track production status?",
+      "expected_decomposition": true,
+      "expected_augmentation": false,
+      "expected_sub_queries": 3,
+      "expected_logic": "SEQUENTIAL",
+      "ground_truth_topics": [
+        "BOM creation",
+        "Work Order assignment",
+        "Production tracking"
+      ],
+      "category": "procedural",
+      "complexity": "complex"
+    },
+    {
+      "query_id": "decomp-2",
+      "query_text": "What are the steps for creating and exporting reports?",
+      "expected_decomposition": true,
+      "expected_augmentation": false,
+      "expected_sub_queries": 2,
+      "expected_logic": "SEQUENTIAL",
+      "ground_truth_topics": [
+        "Report creation",
+        "Report export"
+      ],
+      "category": "procedural",
+      "complexity": "moderate"
+    },
+    {
+      "query_id": "decomp-3",
+      "query_text": "Show me issues with BOM creation or Work Order assignment",
+      "expected_decomposition": true,
+      "expected_augmentation": false,
+      "expected_sub_queries": 2,
+      "expected_logic": "OR",
+      "ground_truth_topics": [
+        "BOM creation issues",
+        "Work Order assignment issues"
+      ],
+      "category": "troubleshooting",
+      "complexity": "moderate"
+    },
+    {
+      "query_id": "decomp-4",
+      "query_text": "First create materials, then assign to BOM, and finally generate WO",
+      "expected_decomposition": true,
+      "expected_augmentation": false,
+      "expected_sub_queries": 3,
+      "expected_logic": "SEQUENTIAL",
+      "ground_truth_topics": [
+        "Material creation",
+        "BOM assignment",
+        "Work Order generation"
+      ],
+      "category": "procedural",
+      "complexity": "complex"
+    },
+    {
+      "query_id": "augment-1",
+      "query_text": "How to export this?",
+      "expected_decomposition": false,
+      "expected_augmentation": true,
+      "expected_variants_range": [2, 5],
+      "augmentation_type": "pronoun_resolution",
+      "ground_truth_topics": [
+        "Export BOM",
+        "Export Work Order",
+        "Export reports"
+      ],
+      "category": "action_completion",
+      "complexity": "simple"
+    },
+    {
+      "query_id": "augment-2",
+      "query_text": "Create new report",
+      "expected_decomposition": false,
+      "expected_augmentation": true,
+      "expected_variants_range": [2, 5],
+      "augmentation_type": "action_completion",
+      "ground_truth_topics": [
+        "Create report in Estimating",
+        "Create production report",
+        "Create custom report"
+      ],
+      "category": "action_completion",
+      "complexity": "simple"
+    },
+    {
+      "query_id": "augment-3",
+      "query_text": "Fix issue",
+      "expected_decomposition": false,
+      "expected_augmentation": true,
+      "expected_variants_range": [2, 5],
+      "augmentation_type": "domain_context",
+      "ground_truth_topics": [
+        "Fix BOM issues",
+        "Fix Work Order issues",
+        "Fix data import issues"
+      ],
+      "category": "troubleshooting",
+      "complexity": "simple"
+    },
+    {
+      "query_id": "augment-4",
+      "query_text": "That feature",
+      "expected_decomposition": false,
+      "expected_augmentation": true,
+      "expected_variants_range": [2, 5],
+      "augmentation_type": "pronoun_resolution",
+      "ground_truth_topics": [
+        "BOM creation feature",
+        "Work Order feature",
+        "Production Control feature"
+      ],
+      "category": "factual",
+      "complexity": "simple"
+    },
+    {
+      "query_id": "simple-1",
+      "query_text": "How to create a Bill of Materials in the Estimating module?",
+      "expected_decomposition": false,
+      "expected_augmentation": false,
+      "ground_truth_topics": [
+        "BOM creation Estimating"
+      ],
+      "category": "procedural",
+      "complexity": "simple"
+    },
+    {
+      "query_id": "simple-2",
+      "query_text": "What is the purpose of the Production Control module in PowerFab?",
+      "expected_decomposition": false,
+      "expected_augmentation": false,
+      "ground_truth_topics": [
+        "Production Control module purpose"
+      ],
+      "category": "factual",
+      "complexity": "simple"
+    },
+    {
+      "query_id": "simple-3",
+      "query_text": "How do I troubleshoot data import errors in PowerFab Purchasing?",
+      "expected_decomposition": false,
+      "expected_augmentation": false,
+      "ground_truth_topics": [
+        "Data import troubleshooting Purchasing"
+      ],
+      "category": "troubleshooting",
+      "complexity": "simple"
+    },
+    {
+      "query_id": "complex-1",
+      "query_text": "How to fix this issue with BOM creation, WO assignment, and tracking?",
+      "expected_decomposition": true,
+      "expected_augmentation": true,
+      "expected_sub_queries": 3,
+      "expected_logic": "AND",
+      "augmentation_type": "pronoun_resolution",
+      "ground_truth_topics": [
+        "BOM creation issues",
+        "Work Order assignment issues",
+        "Production tracking issues"
+      ],
+      "category": "troubleshooting",
+      "complexity": "complex"
+    },
+    {
+      "query_id": "complex-2",
+      "query_text": "What did we discuss about ClientA yesterday and what modules do they use?",
+      "expected_decomposition": true,
+      "expected_augmentation": false,
+      "expected_sub_queries": 2,
+      "expected_logic": "AND",
+      "ground_truth_topics": [
+        "ClientA discussions",
+        "ClientA modules"
+      ],
+      "category": "temporal",
+      "complexity": "complex"
+    },
+    {
+      "query_id": "temporal-1",
+      "query_text": "What issues came up last week?",
+      "expected_decomposition": false,
+      "expected_augmentation": false,
+      "ground_truth_topics": [
+        "Recent issues"
+      ],
+      "category": "temporal",
+      "complexity": "moderate"
+    },
+    {
+      "query_id": "temporal-2",
+      "query_text": "Show me decisions about Production Control from this month",
+      "expected_decomposition": false,
+      "expected_augmentation": false,
+      "ground_truth_topics": [
+        "Production Control decisions"
+      ],
+      "category": "temporal",
+      "complexity": "moderate"
+    },
+    {
+      "query_id": "multi-module-1",
+      "query_text": "How does data flow from Estimating to Production Control to Shipping?",
+      "expected_decomposition": true,
+      "expected_augmentation": false,
+      "expected_sub_queries": 2,
+      "expected_logic": "SEQUENTIAL",
+      "ground_truth_topics": [
+        "Estimating to Production Control",
+        "Production Control to Shipping"
+      ],
+      "category": "procedural",
+      "complexity": "complex"
+    },
+    {
+      "query_id": "multi-module-2",
+      "query_text": "What integrations exist between Purchasing and Inventory modules?",
+      "expected_decomposition": false,
+      "expected_augmentation": false,
+      "ground_truth_topics": [
+        "Purchasing Inventory integration"
+      ],
+      "category": "factual",
+      "complexity": "moderate"
+    },
+    {
+      "query_id": "edge-case-1",
+      "query_text": "BOM?",
+      "expected_decomposition": false,
+      "expected_augmentation": true,
+      "expected_variants_range": [2, 5],
+      "augmentation_type": "domain_context",
+      "ground_truth_topics": [
+        "BOM information"
+      ],
+      "category": "factual",
+      "complexity": "simple"
+    },
+    {
+      "query_id": "edge-case-2",
+      "query_text": "How do I do everything with BOMs including creation, editing, exporting, and deleting them?",
+      "expected_decomposition": true,
+      "expected_augmentation": false,
+      "expected_sub_queries": 4,
+      "expected_logic": "AND",
+      "ground_truth_topics": [
+        "BOM creation",
+        "BOM editing",
+        "BOM export",
+        "BOM deletion"
+      ],
+      "category": "procedural",
+      "complexity": "complex"
+    },
+    {
+      "query_id": "edge-case-3",
+      "query_text": "Export",
+      "expected_decomposition": false,
+      "expected_augmentation": true,
+      "expected_variants_range": [2, 5],
+      "augmentation_type": "action_completion",
+      "ground_truth_topics": [
+        "Export BOM",
+        "Export Work Order",
+        "Export data"
+      ],
+      "category": "action_completion",
+      "complexity": "simple"
+    }
+  ]
+}
