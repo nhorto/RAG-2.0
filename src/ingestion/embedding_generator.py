@@ -1,7 +1,7 @@
 """Embedding generation using OpenAI API."""
 
 import time
-from typing import List, Union, Optional
+from typing import Dict, List, Union, Optional
 import numpy as np
 
 try:
@@ -380,14 +380,19 @@ class HybridEmbeddingGenerator:
 
         # Generate sparse embeddings (local BM25)
         # FastEmbed returns generator, convert to list
-        sparse_embeddings = list(self.sparse_model.embed(texts))
+        sparse_embeddings_raw = list(self.sparse_model.embed(texts))
 
         # Combine into hybrid format
         hybrid_embeddings = []
-        for dense, sparse in zip(dense_embeddings, sparse_embeddings):
+        for dense, sparse in zip(dense_embeddings, sparse_embeddings_raw):
+            # Convert SparseEmbedding to Qdrant SparseVector format
+            sparse_vector = {
+                "indices": sparse.indices.tolist(),
+                "values": sparse.values.tolist()
+            }
             hybrid_embeddings.append({
                 "dense": dense,
-                "sparse": sparse  # This is already in Qdrant sparse format
+                "sparse": sparse_vector
             })
 
         return hybrid_embeddings
@@ -405,7 +410,13 @@ class HybridEmbeddingGenerator:
         dense = self.dense_generator.generate_embedding(query)
 
         # Sparse embedding
-        sparse = list(self.sparse_model.embed([query]))[0]
+        sparse_raw = list(self.sparse_model.embed([query]))[0]
+
+        # Convert SparseEmbedding to Qdrant SparseVector format
+        sparse = {
+            "indices": sparse_raw.indices.tolist(),
+            "values": sparse_raw.values.tolist()
+        }
 
         return {
             "dense": dense,

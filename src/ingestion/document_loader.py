@@ -199,15 +199,28 @@ class DocumentLoader:
         Returns:
             Text content
         """
-        try:
-            loader = TextLoader(str(filepath), encoding=self.encoding)
-            docs = loader.load()
-            if docs:
-                return docs[0].page_content
-            return None
-        except Exception as e:
-            print(f"Error loading text file {filepath}: {e}")
-            return None
+        # Try multiple encodings in order of preference
+        encodings_to_try = [self.encoding, 'utf-8', 'iso-8859-1', 'cp1252', 'latin-1']
+
+        for encoding in encodings_to_try:
+            try:
+                loader = TextLoader(str(filepath), encoding=encoding)
+                docs = loader.load()
+                if docs:
+                    return docs[0].page_content
+                return None
+            except UnicodeDecodeError:
+                continue
+            except Exception as e:
+                # If it's not an encoding error, try with errors='ignore'
+                try:
+                    with open(filepath, 'r', encoding=encoding, errors='ignore') as f:
+                        return f.read()
+                except Exception:
+                    continue
+
+        print(f"Error loading text file {filepath}: Could not decode with any supported encoding")
+        return None
 
     def _extract_metadata_from_filename(self, filename: str) -> dict:
         """Extract metadata from filename.

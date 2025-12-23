@@ -48,8 +48,8 @@ def main():
     parser.add_argument(
         "--file-pattern",
         type=str,
-        default="*.txt",
-        help="File pattern to match (default: *.txt)",
+        default=None,
+        help="File pattern to match (default: *.txt, *.srt, *.vtt)",
     )
 
     args = parser.parse_args()
@@ -82,7 +82,8 @@ def main():
         return 1
 
     print(f"\nLoading documents from: {source_dir}")
-    documents = loader.load_directory(source_dir, pattern=args.file_pattern)
+    patterns = [args.file_pattern] if args.file_pattern else None
+    documents = loader.load_directory(source_dir, patterns=patterns)
 
     if not documents:
         print("No documents found to ingest")

@@ -3,6 +3,8 @@
 import logging
 from typing import List, Dict, Optional, Literal
 from collections import defaultdict
+from qdrant_client import models
+from qdrant_client.models import SparseVector
 
 from ..database.qdrant_client import QdrantManager, SearchResult, get_qdrant_manager
 from ..ingestion.embedding_generator import EmbeddingGenerator, HybridEmbeddingGenerator
@@ -200,10 +202,16 @@ class HybridSearcher:
             List of SearchResult objects
         """
         try:
-            # Use Qdrant's native sparse vector search
-            search_results = self.qdrant.client.search(
+            # Convert sparse dict to SparseVector model
+            sparse_vector = SparseVector(
+                indices=query_sparse["indices"],
+                values=query_sparse["values"]
+            )
+            # Use Qdrant's native sparse vector search with query_points
+            search_results = self.qdrant.client.query_points(
                 collection_name=self.qdrant.collection_name,
-                query_vector=("sparse", query_sparse),  # Use named sparse vector
+                query=sparse_vector,
+                using="sparse",
                 query_filter=filters,
                 limit=top_k,
                 with_payload=True,
@@ -211,7 +219,7 @@ class HybridSearcher:
 
             # Convert to SearchResult objects
             results = []
-            for hit in search_results:
+            for hit in search_results.points:
                 results.append(
                     SearchResult(
                         chunk_id=str(hit.id),
@@ -366,6 +374,11 @@ class HybridSearcher:
             return self._dense_search(query_dense, filters, top_k)
 
         try:
+            # Convert sparse dict to SparseVector model
+            sparse_query = SparseVector(
+                indices=query_embeddings["sparse"]["indices"],
+                values=query_embeddings["sparse"]["values"]
+            )
             # Use Qdrant's prefetch for hybrid search
             search_results = self.qdrant.client.query_points(
                 collection_name=self.qdrant.collection_name,
@@ -380,13 +393,12 @@ class HybridSearcher:
                     # Sparse keyword search
                     Prefetch(
                         using="sparse",
-                        query=query_embeddings["sparse"],
+                        query=sparse_query,
                         limit=self.sparse_top_k,
                         filter=filters,
                     ),
                 ],
-                query=query_embeddings["dense"],  # Final ranking uses dense
-                using="dense",
+                query=models.FusionQuery(fusion=models.Fusion.RRF),
                 limit=top_k,
                 with_payload=True,
             )

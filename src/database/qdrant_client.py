@@ -4,7 +4,7 @@ from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 
 try:
-    from qdrant_client import QdrantClient as QdrantClientBase
+    from qdrant_client import QdrantClient as QdrantClientBase, models
     from qdrant_client.models import (
         Distance,
         VectorParams,
@@ -16,6 +16,7 @@ try:
         SearchRequest,
         ScoredPoint,
         SparseVectorParams,
+        SparseVector,
         Prefetch,
     )
     QDRANT_AVAILABLE = True
@@ -127,7 +128,7 @@ class QdrantManager:
                 print(f"Collection already exists: {collection_name}")
                 return True
 
-        # Create vectors config
+        # Create vectors config for dense vectors
         vectors_config = {
             "dense": VectorParams(
                 size=vector_size,
@@ -135,15 +136,19 @@ class QdrantManager:
             )
         }
 
-        # Add sparse vectors if enabled
+        # Create sparse vectors config if enabled
+        sparse_vectors_config = None
         if enable_sparse:
-            vectors_config["sparse"] = SparseVectorParams()
+            sparse_vectors_config = {
+                "sparse": SparseVectorParams()
+            }
 
         # Create collection with multi-vector support
         print(f"Creating collection: {collection_name}")
         self.client.create_collection(
             collection_name=collection_name,
             vectors_config=vectors_config,
+            sparse_vectors_config=sparse_vectors_config,
         )
 
         print(f"Created collection '{collection_name}' with multi-vector support")
@@ -174,8 +179,8 @@ class QdrantManager:
 
         return {
             "exists": True,
-            "vectors_count": info.vectors_count,
             "points_count": info.points_count,
+            "indexed_vectors_count": info.indexed_vectors_count,
             "status": info.status,
         }
 
@@ -243,21 +248,18 @@ class QdrantManager:
         Returns:
             List of SearchResult objects
         """
-        search_params = {
-            "collection_name": self.collection_name,
-            "query_vector": query_vector,
-            "limit": limit,
-        }
+        # Use query_points with named vector for multi-vector collection
+        results = self.client.query_points(
+            collection_name=self.collection_name,
+            query=query_vector,
+            using="dense",
+            limit=limit,
+            query_filter=filters,
+            score_threshold=score_threshold,
+            with_payload=True,
+        )
 
-        if filters:
-            search_params["query_filter"] = filters
-
-        if score_threshold:
-            search_params["score_threshold"] = score_threshold
-
-        results = self.client.search(**search_params)
-
-        return self._convert_to_search_results(results)
+        return self._convert_to_search_results(results.points)
 
     def _convert_to_search_results(
         self, qdrant_results: List[ScoredPoint]
@@ -404,11 +406,17 @@ class QdrantManager:
                 # Create points with multi-vector format
                 points = []
                 for chunk, embeddings in zip(batch_chunks, batch_embeddings):
+                    # Convert sparse dict to SparseVector model
+                    sparse_data = embeddings["sparse"]
+                    sparse_vector = SparseVector(
+                        indices=sparse_data["indices"],
+                        values=sparse_data["values"]
+                    )
                     point = PointStruct(
                         id=chunk["chunk_id"] if "chunk_id" in chunk else chunk["id"],
                         vector={
                             "dense": embeddings["dense"],
-                            "sparse": embeddings["sparse"],
+                            "sparse": sparse_vector,
                         },
                         payload=chunk.get("payload", chunk) if "payload" in chunk else chunk,
                     )

@@ -14,7 +14,7 @@ help:
 install:
 	@echo "Installing dependencies..."
 	pip install -r requirements.txt
-	python -m spacy download en_core_web_sm
+	python -c "import spacy; spacy.cli.download('en_core_web_sm')"
 	@echo "Done! Don't forget to configure your .env file"
 
 setup:
